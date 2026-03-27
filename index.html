@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ONE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#00ff00">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.png" type="image/png">
+
+<style>
+  body { 
+    margin:0; 
+    overflow:hidden; 
+    background:#080808; 
+    font-family:'Courier New', Courier, monospace; 
+    display:flex; 
+    justify-content:center; 
+    align-items:center; 
+    height:100vh; 
+    color:#0f0;
+    touch-action: manipulation;
+  }
+  
+  /* Mobile-optimized Monitor Container - tuned for \~500x400 */
+  #monitorContainer {
+    width: 100%;
+    max-width: 500px;
+    height: 400px;
+    background: #000;
+    border: 4px solid #333;
+    border-radius: 15px;
+    box-shadow: 0 0 60px rgba(0,255,0,0.15), inset 0 0 30px rgba(0,0,0,0.9);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  /* Canvas layers - force exact fill */
+  canvas { 
+    display:block; 
+    position:absolute; 
+    top:0; 
+    left:0; 
+    width:100% !important;
+    height:100% !important;
+  }
+
+  /* Top Stats Bar */
+  #statsBar { 
+    position:absolute; 
+    top:0; 
+    left:0; 
+    width:100%; 
+    height:22px; 
+    background:rgba(0,20,0,0.9); 
+    color:#0f0; 
+    border-bottom:1px solid #050; 
+    display:flex; 
+    align-items:center; 
+    padding:0 6px; 
+    gap:8px; 
+    font-size:9px; 
+    z-index:10; 
+    pointer-events:none;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  /* Toggle Button */
+  #toggleSetupBtn {
+    position: absolute;
+    top: 28px;
+    right: 10px;
+    z-index: 20;
+    background: rgba(0,0,0,0.7);
+    color: #0f0;
+    border: 1px solid #0f0;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 16px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 4px;
+    transition: background 0.2s;
+    touch-action: manipulation;
+  }
+  #toggleSetupBtn:hover { background: #0f0; color: #000; }
+
+  /* Setup Panel - mobile friendly */
+  #setupPanel {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 320px;
+    max-height: 85vh;
+    background: rgba(5,10,5,0.98);
+    border: 1px solid #0f0;
+    color: #0f0;
+    padding: 10px;
+    overflow-y: auto;
+    z-index: 100;
+    font-size: 10.5px;
+    box-shadow: -5px 5px 20px rgba(0,0,0,0.8);
+    transform: translateX(0);
+    transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1), opacity 0.3s;
+    opacity: 1;
+  }
+
+  #setupPanel.collapsed {
+    transform: translateX(340px);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* UI Elements */
+  button, select, input[type="range"] { 
+    background:#000; 
+    color:#0f0; 
+    border:1px solid #0f0; 
+    font-family:inherit; 
+    touch-action: manipulation;
+  }
+  button { 
+    padding:8px 10px; 
+    min-height: 38px; 
+    font-size: 13px;
+    width:100%; 
+    text-align:left; 
+    margin-bottom:6px;
+  }
+  button:hover { background:#0f0; color:#000; }
+  select { width:100%; padding:5px; margin-bottom:6px; }
+  input[type="range"] { width:100%; accent-color:#0f0; }
+  
+  .section { margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid #224422; }
+  label { display:block; margin:5px 0 3px; font-size:10px; color:#afa; }
+  h3, h4 { margin:6px 0; color:#0f0; font-size:12px; text-transform:uppercase; letter-spacing:1px; }
+  .glow { color:#ff0; text-shadow:0 0 5px #ff0; }
+  .row { display:flex; justify-content:space-between; gap:8px; }
+  .metric { font-size:9px; display:inline-block; width:48%; background:#001100; padding:3px; border:1px solid #003300; }
+  .grid-item { font-size:9px; padding:3px; border-bottom:1px dotted #004400; display:flex; justify-content:space-between; }
+</style>
+</head>
+<body>
+
+<!-- Monitor Container -->
+<div id="monitorContainer">
+  <div id="statsBar">
+    <span>FPS: <b id="fpsEl">0</b></span>
+    <span>MEM: <b id="memEl">--</b></span>
+    <span>OBJ: <b id="objEl">0</b></span>
+    <span>MODE: <b id="modeEl">HYPER</b></span>
+  </div>
+
+  <button id="toggleSetupBtn">⚙️</button>
+
+  <!-- 3D Layer -->
+  <canvas id="webglCanvas"></canvas>
+  <!-- 2D Layer -->
+  <canvas id="gameCanvas"></canvas>
+</div>
+
+<!-- Setup Panel -->
+<div id="setupPanel">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <h3>ONE <span class="glow">v1.5</span></h3>
+    <div style="font-size:9px;">5D HYPERSLICE</div>
+  </div>
+
+  <div class="section">
+    <h4>CONSOLE CORE</h4>
+    <div class="row">
+      <div class="metric">STATUS: <span id="consoleStatusEl" style="color:#fff">IDLE</span></div>
+      <div class="metric">ACTIVE: <span id="activeGameEl">NONE</span></div>
+    </div>
+    <button id="loadSimBtn">[[ LOAD SIM: 5D HYPERSLICE ]]</button>
+  </div>
+
+  <div class="section">
+    <label>Projection Mode</label>
+    <select id="modeSelect">
+      <option value="ortho">Orthographic</option>
+      <option value="stereo">Stereographic</option>
+      <option value="hyper" selected>Hyperbolic</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <label>Strands (<span id="strandCountVal">4000</span>)</label>
+    <input type="range" id="strandInput" min="500" max="12000" step="100" value="4000">
+
+    <label>Dust (<span id="dustVal">8000</span>)</label>
+    <input type="range" id="dustInput" min="2000" max="20000" step="500" value="8000">
+
+    <label>Rot Speed (<span id="rotSpeedVal">0.8</span>)</label>
+    <input type="range" id="rotSpeedInput" min="0.1" max="3.0" step="0.1" value="0.8">
+
+    <label>Time Speed (<span id="speedVal">1.0</span>)</label>
+    <input type="range" id="speedInput" min="0.1" max="4.0" step="0.1" value="1.0">
+    
+    <label>Tension (<span id="tensionVal">1.0</span>)</label>
+    <input type="range" id="tensionInput" min="0.1" max="2.5" step="0.1" value="1.0">
+  </div>
+
+  <div class="section">
+    <h4>POST FX</h4>
+    <label>Bloom (<span id="bloomVal">1.0</span>)</label>
+    <input type="range" id="bloomInput" min="0" max="2.0" step="0.1" value="1.0">
+    
+    <label>Chroma (<span id="chromaVal">0.002</span>)</label>
+    <input type="range" id="chromaInput" min="0" max="0.008" step="0.001" value="0.002">
+  </div>
+
+  <div class="section">
+    <h4>STRESS TEST</h4>
+    <select id="stressPreset">
+      <option value="low">Low (Mobile Safe)</option>
+      <option value="medium" selected>Medium</option>
+      <option value="high">High</option>
+    </select>
+    <button id="startStressBtn" style="margin-top:6px;">[[ START STRESS ]]</button>
+    <button id="stopStressBtn" disabled>[[ STOP ]]</button>
+    <div id="stressStatus" style="margin-top:6px; font-size:10px; color:#888;">Idle</div>
+  </div>
+  
+  <div class="section">
+    <h4>GRID REF</h4>
+    <div id="gridDisplay" style="max-height:90px; overflow-y:auto; border:1px solid #003300; background:#000; font-size:9px;">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ====================== ONE - 5D HYPERSLICE (Mobile Optimized) ======================
+
+import * as THREE from "https://esm.sh/three@0.177.0";
+import { EffectComposer } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/ShaderPass.js";
+import { OutputPass } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/OutputPass.js";
+import { createNoise3D } from "https://esm.sh/simplex-noise@4.0.3";
+
+// DOM Elements
+const fpsEl = document.getElementById('fpsEl');
+const memEl = document.getElementById('memEl');
+const objEl = document.getElementById('objEl');
+const modeEl = document.getElementById('modeEl');
+const consoleStatusEl = document.getElementById('consoleStatusEl');
+const activeGameEl = document.getElementById('activeGameEl');
+const strandCountVal = document.getElementById('strandCountVal');
+const dustVal = document.getElementById('dustVal');
+const rotSpeedVal = document.getElementById('rotSpeedVal');
+const speedVal = document.getElementById('speedVal');
+const tensionVal = document.getElementById('tensionVal');
+const bloomVal = document.getElementById('bloomVal');
+const chromaVal = document.getElementById('chromaVal');
+const stressStatus = document.getElementById('stressStatus');
+
+// Canvas setup
+const gameCanvas = document.getElementById('gameCanvas');
+const ctx = gameCanvas.getContext('2d');
+gameCanvas.width = 500;
+gameCanvas.height = 400;
+
+// Global State
+let activeGame = "NONE";
+let isMenu = true;
+
+const MONITOR_W = 500;
+const MONITOR_H = 400;
+
+const CONFIG = { 
+  segmentsPerStrand: 18,     // reduced for mobile
+  strandRadius: 55,
+  phaseDuration: 1800
+};
+
+let state = {
+  strandCount: 4000,
+  dustCount: 8000,
+  speed: 1.0,
+  rotSpeed: 0.8,
+  noiseMag: 0.04,
+  tension: 1.0,
+  mode: 'hyper',
+  time: 0,
+  isStressTesting: false,
+  bloomStrength: 1.0,
+  chromaAmount: 0.002
+};
+
+// Three.js core
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000022, 0.0018);
+
+const camera = new THREE.PerspectiveCamera(55, MONITOR_W / MONITOR_H, 0.1, 600);
+camera.position.set(0, 8, 95);
+
+const renderer = new THREE.WebGLRenderer({ 
+  canvas: document.getElementById('webglCanvas'), 
+  antialias: false,
+  powerPreference: "low-power"
+});
+renderer.setSize(MONITOR_W, MONITOR_H);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
+
+const composer = new EffectComposer(renderer);
+composer.setSize(MONITOR_W, MONITOR_H);
+
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(MONITOR_W, MONITOR_H), 1.0, 0.3, 0.85);
+bloomPass.threshold = 0.15;
+bloomPass.strength = state.bloomStrength;
+bloomPass.radius = 0.45;
+composer.addPass(bloomPass);
+
+const chromaShader = {
+  uniforms: { "tDiffuse": { value: null }, "amount": { value: state.chromaAmount } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float amount;
+    varying vec2 vUv;
+    void main() {
+      vec2 offset = amount * vec2(1.0, 0.0);
+      vec4 cr = texture2D(tDiffuse, vUv + offset);
+      vec4 cga = texture2D(tDiffuse, vUv);
+      vec4 cb = texture2D(tDiffuse, vUv - offset);
+      gl_FragColor = vec4(cr.r, cga.g, cb.b, cga.a);
+    }
+  `
+};
+const chromaPass = new ShaderPass(chromaShader);
+composer.addPass(chromaPass);
+
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
+
+// Geometry & objects
+let geometry, lines, dustSystem;
+const strandOrigins = [];
+const tempVec = new THREE.Vector3();
+const tempQuat = new THREE.Quaternion();
+const tempQuat2 = new THREE.Quaternion();
+const tempColor = new THREE.Color();
+const noise3D = createNoise3D();
+
+function initStrands() {
+  strandOrigins.length = 0;
+  for (let i = 0; i < 15000; i++) {
+    strandOrigins.push({
+      basePos: new THREE.Vector3(
+        (Math.random()-0.5)*CONFIG.strandRadius*2,
+        (Math.random()-0.5)*CONFIG.strandRadius*2,
+        (Math.random()-0.5)*CONFIG.strandRadius*2
+      ),
+      quat: new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize(),
+        Math.random() * Math.PI * 2
+      ),
+      phase: Math.random() * 180
+    });
+  }
+}
+
+function createGeometry() {
+  const segs = CONFIG.segmentsPerStrand;
+  const maxCount = 15000;
+  const count = maxCount * segs;
+  const positions = new Float32Array(count * 6);
+  const colors = new Float32Array(count * 6);
+  
+  geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setDrawRange(0, state.strandCount * segs * 2);
+
+  if (lines) scene.remove(lines);
+
+  const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    opacity: 0.65
+  });
+  
+  lines = new THREE.LineSegments(geometry, material);
+  scene.add(lines);
+}
+
+function createDust() {
+  if (dustSystem) scene.remove(dustSystem);
+
+  const dustGeom = new THREE.BufferGeometry();
+  const positions = new Float32Array(25000 * 3);
+  
+  for (let i = 0; i < 25000; i++) {
+    positions[i*3]   = (Math.random()-0.5) * 220;
+    positions[i*3+1] = (Math.random()-0.5) * 220;
+    positions[i*3+2] = (Math.random()-0.5) * 220;
+  }
+  
+  dustGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  dustGeom.setDrawRange(0, state.dustCount);
+
+  const dustMaterial = new THREE.PointsMaterial({
+    color: 0x88aaff,
+    size: 0.6,
+    transparent: true,
+    opacity: 0.35,
+    blending: THREE.AdditiveBlending
+  });
+  
+  dustSystem = new THREE.Points(dustGeom, dustMaterial);
+  scene.add(dustSystem);
+}
+
+function updateStrandCount(n) {
+  state.strandCount = Math.floor(n);
+  const segs = CONFIG.segmentsPerStrand;
+  geometry.setDrawRange(0, state.strandCount * segs * 2);
+  strandCountVal.textContent = state.strandCount;
+  objEl.textContent = state.strandCount;
+}
+
+// Animation loop
+let lastFrameTime = performance.now();
+let stressStartTime = 0;
+let stressPhase = 0;
+let frameCount = 0;
+let lastFpsTime = 0;
+
+function animate(currentTime) {
+  requestAnimationFrame(animate);
+  
+  const dt = (currentTime - lastFrameTime) / 1000;
+  lastFrameTime = currentTime;
+
+  frameCount++;
+  if (currentTime - lastFpsTime >= 1000) {
+    fpsEl.textContent = frameCount;
+    if (performance.memory) memEl.textContent = Math.round(performance.memory.usedJSHeapSize / 1048576) + "MB";
+    frameCount = 0;
+    lastFpsTime = currentTime;
+  }
+
+  state.time += dt * state.speed;
+
+  const posArray = geometry.attributes.position.array;
+  const colArray = geometry.attributes.color.array;
+  const segs = CONFIG.segmentsPerStrand;
+
+  for (let i = 0; i < state.strandCount; i++) {
+    const s = strandOrigins[i];
+    const base = s.basePos;
+
+    tempQuat2.setFromAxisAngle(tempVec.set(0,1,0).normalize(), dt * state.rotSpeed * 0.75);
+    s.quat.multiplyQuaternions(s.quat, tempQuat2).normalize();
+
+    for (let j = 0; j < segs; j++) {
+      const t = j / segs;
+      const to = state.time + s.phase + t * 5.5;
+      const n = noise3D(base.x*0.035 + to*0.07, base.y*0.035 + to*0.07, base.z*0.035) * state.noiseMag * 14;
+
+      tempVec.set(
+        base.x + Math.sin(to*0.55)*state.tension*3.8 + n,
+        base.y + Math.cos(to*0.32)*state.tension*3.8 + n,
+        base.z + Math.sin(to*0.68)*state.tension*1.8
+      );
+      tempVec.applyQuaternion(s.quat);
+
+      let x3 = tempVec.x, y3 = tempVec.y, z3 = tempVec.z;
+      
+      if (state.mode === 'hyper') {
+        const exp = Math.exp((s.quat.w + to*0.08) * 0.045 * state.tension);
+        x3 *= exp; y3 *= exp; z3 += to * 1.8;
+      } else if (state.mode === 'stereo') {
+        const w = s.quat.w;
+        const denom = 1 - w;
+        if (Math.abs(denom) > 0.01) {
+          const factor = 2 / denom;
+          x3 *= factor; y3 *= factor; z3 *= factor;
+        }
+      }
+
+      const idx = (i * segs + j) * 6;
+      posArray[idx] = x3; posArray[idx+1] = y3; posArray[idx+2] = z3;
+
+      // Next segment
+      const tNext = (j+1)/segs;
+      const toNext = state.time + s.phase + tNext * 5.5;
+      const nNext = noise3D(base.x*0.035 + toNext*0.07, base.y*0.035 + toNext*0.07, base.z*0.035) * state.noiseMag * 14;
+      
+      tempVec.set(
+        base.x + Math.sin(toNext*0.55)*state.tension*3.8 + nNext,
+        base.y + Math.cos(toNext*0.32)*state.tension*3.8 + nNext,
+        base.z + Math.sin(toNext*0.68)*state.tension*1.8
+      );
+      tempVec.applyQuaternion(s.quat);
+      
+      let x3n = tempVec.x, y3n = tempVec.y, z3n = tempVec.z;
+      if (state.mode === 'hyper') {
+        const exp = Math.exp((s.quat.w + toNext*0.08) * 0.045 * state.tension);
+        x3n *= exp; y3n *= exp; z3n += toNext * 1.8;
+      } else if (state.mode === 'stereo') {
+        const w = s.quat.w;
+        const denom = 1 - w;
+        if (Math.abs(denom) > 0.01) {
+          const factor = 2 / denom;
+          x3n *= factor; y3n *= factor; z3n *= factor;
+        }
+      }
+      
+      posArray[idx+3] = x3n; posArray[idx+4] = y3n; posArray[idx+5] = z3n;
+
+      tempColor.setHSL((Math.sin(to) + 1)*0.48, 0.92, 0.62);
+      colArray[idx] = tempColor.r; colArray[idx+1] = tempColor.g; colArray[idx+2] = tempColor.b;
+      colArray[idx+3] = tempColor.r; colArray[idx+4] = tempColor.g; colArray[idx+5] = tempColor.b;
+    }
+  }
+
+  geometry.attributes.position.needsUpdate = true;
+  geometry.attributes.color.needsUpdate = true;
+
+  // Stress test ramp
+  if (state.isStressTesting) {
+    if (currentTime - stressStartTime > CONFIG.phaseDuration * (stressPhase + 1)) {
+      stressPhase++;
+      if (stressPhase > 4) {
+        state.isStressTesting = false;
+        document.getElementById('startStressBtn').disabled = false;
+        document.getElementById('stopStressBtn').disabled = true;
+        stressStatus.textContent = "COMPLETE";
+        stressStatus.style.color = "#0f0";
+      } else {
+        let base = 2000;
+        if(document.getElementById('stressPreset').value === 'low') base = 800;
+        if(document.getElementById('stressPreset').value === 'high') base = 6000;
+        let target = base + (base * 4 * (stressPhase / 4));
+        updateStrandCount(Math.min(Math.floor(target), 11000));
+        stressStatus.textContent = `Phase ${stressPhase+1}: ${state.strandCount}`;
+      }
+    }
+  }
+
+  // Gentle camera orbit
+  camera.position.x = Math.sin(currentTime * 0.00018) * 92;
+  camera.position.z = Math.cos(currentTime * 0.00018) * 92;
+  camera.lookAt(0, 0, 0);
+  
+  composer.render();
+}
+
+// 2D Overlay
+function render2D() {
+  ctx.clearRect(0, 0, 500, 400);
+  if (!isMenu && activeGame !== "NONE") {
+    // CRT scanlines
+    ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
+    for(let i=0; i<400; i+=4) ctx.fillRect(0, i, 500, 1);
+    
+    ctx.fillStyle = "#0f0";
+    ctx.font = "12px 'Courier New'";
+    ctx.fillText("SYS.ONLINE • MEM.INTEGRITY 100%", 20, 35);
+    ctx.fillText("RENDERING 5D MANIFOLD...", 20, 55);
+  } else {
+    ctx.fillStyle = "#0f0";
+    ctx.font = "15px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.fillText("ONE", 250, 170);
+    ctx.font = "12px 'Courier New'";
+    ctx.fillText("LOAD SIM FROM SETUP", 250, 210);
+  }
+  requestAnimationFrame(render2D);
+}
+
+// Grid
+const gridPoints = [
+  {id:0, weight:"2^0", role:"w-seed"},
+  {id:1, weight:"2^1", role:"x-origin"},
+  {id:14, weight:"2^14", role:"base-gate"},
+  {id:28, weight:"2^28", role:"mid-gate"},
+  {id:42, weight:"2^42", role:"w-rot"},
+  {id:56, weight:"2^56", role:"zenith"},
+  {id:66, weight:"2^66", role:"w-echo"}
+];
+
+function initGridUI() {
+  const container = document.getElementById('gridDisplay');
+  let html = '';
+  gridPoints.forEach(p => {
+    html += `<div class="grid-item"><span>\( {p.id} ( \){p.weight})</span><span style="color:#888">${p.role}</span></div>`;
+  });
+  container.innerHTML = html;
+}
+
+// UI Wiring
+const panel = document.getElementById('setupPanel');
+const toggleBtn = document.getElementById('toggleSetupBtn');
+
+toggleBtn.onclick = () => {
+  panel.classList.toggle('collapsed');
+  toggleBtn.textContent = panel.classList.contains('collapsed') ? '⚙️' : '✖';
+};
+
+document.getElementById('loadSimBtn').onclick = () => {
+  activeGame = "5D_HYPERSLICE";
+  isMenu = false;
+  consoleStatusEl.textContent = "RUNNING";
+  activeGameEl.textContent = "5D";
+  panel.classList.add('collapsed');
+  toggleBtn.textContent = '⚙️';
+};
+
+document.getElementById('modeSelect').onchange = e => {
+  state.mode = e.target.value;
+  modeEl.textContent = e.target.value.toUpperCase();
+};
+
+document.getElementById('strandInput').oninput = e => updateStrandCount(parseInt(e.target.value));
+document.getElementById('dustInput').oninput = e => {
+  state.dustCount = parseInt(e.target.value);
+  dustVal.textContent = state.dustCount;
+  if (dustSystem) dustSystem.geometry.setDrawRange(0, state.dustCount);
+};
+document.getElementById('rotSpeedInput').oninput = e => {
+  state.rotSpeed = parseFloat(e.target.value);
+  rotSpeedVal.textContent = state.rotSpeed.toFixed(1);
+};
+document.getElementById('speedInput').oninput = e => {
+  state.speed = parseFloat(e.target.value);
+  speedVal.textContent = state.speed.toFixed(1);
+};
+document.getElementById('tensionInput').oninput = e => {
+  state.tension = parseFloat(e.target.value);
+  tensionVal.textContent = state.tension.toFixed(1);
+};
+document.getElementById('bloomInput').oninput = e => {
+  state.bloomStrength = parseFloat(e.target.value);
+  bloomPass.strength = state.bloomStrength;
+  bloomVal.textContent = state.bloomStrength.toFixed(1);
+};
+document.getElementById('chromaInput').oninput = e => {
+  state.chromaAmount = parseFloat(e.target.value);
+  chromaPass.uniforms.amount.value = state.chromaAmount;
+  chromaVal.textContent = state.chromaAmount.toFixed(3);
+};
+
+document.getElementById('startStressBtn').onclick = () => {
+  state.isStressTesting = true;
+  stressPhase = 0;
+  stressStartTime = performance.now();
+  let base = 1500;
+  if(document.getElementById('stressPreset').value === 'low') base = 800;
+  if(document.getElementById('stressPreset').value === 'high') base = 5000;
+  updateStrandCount(base);
+  document.getElementById('startStressBtn').disabled = true;
+  document.getElementById('stopStressBtn').disabled = false;
+  stressStatus.textContent = "Phase 1 running...";
+  stressStatus.style.color = "#ff0";
+};
+
+document.getElementById('stopStressBtn').onclick = () => {
+  state.isStressTesting = false;
+  document.getElementById('startStressBtn').disabled = false;
+  document.getElementById('stopStressBtn').disabled = true;
+  stressStatus.textContent = "Stopped";
+  stressStatus.style.color = "#888";
+  updateStrandCount(4000);
+};
+
+// Resize handler for mobile orientation / viewport changes
+function handleResize() {
+  const w = Math.min(window.innerWidth, 500);
+  const h = Math.min(window.innerHeight * 0.92, 400);
+  
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  
+  if (w < 420) camera.position.z = 108;
+}
+
+window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', () => setTimeout(handleResize, 120));
+
+// Input
+document.getElementById('monitorContainer').addEventListener('touchstart', () => {
+  if (!isMenu) console.log("[[ONE]] Input registered");
+});
+
+// Init everything
+initStrands();
+createGeometry();
+createDust();
+initGridUI();
+animate(performance.now());
+render2D();
+handleResize();
+
+// ====================== PWA Service Worker ======================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => console.log('[[ONE]] SW registered'))
+      .catch(err => console.log('[[ONE]] SW failed', err));
+  });
+}
+
+</script>
+</body>
+</html>
