@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ONE</title>
+<style>
+  body { 
+    margin:0; 
+    overflow:hidden; 
+    background:#080808; 
+    font-family:'Courier New', Courier, monospace; 
+    display:flex; 
+    justify-content:center; 
+    align-items:center; 
+    height:100vh; 
+    color:#0f0;
+  }
+  
+  /* The Monitor Container - 350x450 as requested */
+  #monitorContainer {
+    width: 350px;
+    height: 450px;
+    background: #000;
+    border: 4px solid #333;
+    border-radius: 15px;
+    box-shadow: 0 0 60px rgba(0,255,0,0.15), inset 0 0 30px rgba(0,0,0,0.9);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  /* Canvas Layers */
+  canvas { display:block; position:absolute; top:0; left:0; }
+  #webglCanvas { z-index:1; outline: none; }
+  #gameCanvas { z-index:2; pointer-events:none; }
+
+  /* Top Stats Bar inside Monitor */
+  #statsBar { 
+    position:absolute; 
+    top:0; 
+    left:0; 
+    width:100%; 
+    height:24px; 
+    background:rgba(0,20,0,0.85); 
+    color:#0f0; 
+    border-bottom:1px solid #050; 
+    display:flex; 
+    align-items:center; 
+    padding:0 8px; 
+    gap:10px; 
+    font-size:10px; 
+    z-index:10; 
+    pointer-events:none;
+    white-space: nowrap;
+  }
+
+  /* Toggle Button for Setup */
+  #toggleSetupBtn {
+    position: absolute;
+    top: 30px;
+    right: 10px;
+    z-index: 20;
+    background: rgba(0,0,0,0.7);
+    color: #0f0;
+    border: 1px solid #0f0;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+  #toggleSetupBtn:hover { background: #0f0; color: #000; }
+
+  /* Floating Setup Panel (Outside monitor to avoid covering) */
+  #setupPanel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 340px;
+    max-height: 90vh;
+    background: rgba(5,10,5,0.98);
+    border: 1px solid #0f0;
+    color: #0f0;
+    padding: 12px;
+    overflow-y: auto;
+    z-index: 100;
+    font-size: 11px;
+    box-shadow: -5px 5px 20px rgba(0,0,0,0.8);
+    transform: translateX(0);
+    transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1), opacity 0.3s;
+    opacity: 1;
+  }
+
+  /* Collapsed State */
+  #setupPanel.collapsed {
+    transform: translateX(400px);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Internal UI Elements */
+  button, select, input[type="range"] { background:#000; color:#0f0; border:1px solid #0f0; font-family:inherit; }
+  button { padding:5px 8px; cursor:pointer; font-weight:bold; margin-bottom:5px; width:100%; text-align:left; }
+  button:hover { background:#0f0; color:#000; }
+  select { width:100%; padding:4px; margin-bottom:5px; }
+  input[type="range"] { width:100%; accent-color:#0f0; }
+  .section { margin-bottom:15px; padding-bottom:10px; border-bottom:1px solid #224422; }
+  label { display:block; margin:5px 0 2px; font-size:10px; color:#afa; }
+  h3, h4 { margin:5px 0; color:#0f0; font-size:12px; text-transform:uppercase; letter-spacing:1px; }
+  .glow { color:#ff0; text-shadow:0 0 5px #ff0; }
+  .row { display:flex; justify-content:space-between; gap:10px; }
+  .metric { font-size:9px; display:inline-block; width:48%; background:#001100; padding:2px; border:1px solid #003300; }
+  .grid-item { font-size:9px; padding:2px; border-bottom:1px dotted #004400; display:flex; justify-content:space-between; }
+  .grid-active { color:#fff; background:#004400; }
+</style>
+</head>
+<body>
+
+<!-- Monitor Container (350x450) -->
+<div id="monitorContainer">
+  <div id="statsBar">
+    <span>FPS: <b id="fpsEl">0</b></span>
+    <span>MEM: <b id="memEl">--</b></span>
+    <span>OBJ: <b id="objEl">0</b></span>
+    <span>MODE: <b id="modeEl">HYPER</b></span>
+  </div>
+
+  <!-- Gear Icon Button -->
+  <button id="toggleSetupBtn">⚙️</button>
+
+  <!-- 3D Layer -->
+  <canvas id="webglCanvas"></canvas>
+  <!-- 2D RPG/UI Layer -->
+  <canvas id="gameCanvas"></canvas>
+</div>
+
+<!-- Setup Panel -->
+<div id="setupPanel">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <h3>NANOFILE NATION <span class="glow">v1.5</span></h3>
+    <div style="font-size:9px;">SPEC SHEET</div>
+  </div>
+
+  <div class="section">
+    <h4>CONSOLE CORE</h4>
+    <div class="row">
+      <div class="metric">STATUS: <span id="consoleStatusEl" style="color:#fff">IDLE</span></div>
+      <div class="metric">ACTIVE: <span id="activeGameEl">NONE</span></div>
+    </div>
+    <button id="loadSimBtn">[[ LOAD SIM: 5D HYPERSLICE ]]</button>
+  </div>
+
+  <div class="section">
+    <label>Projection Mode</label>
+    <select id="modeSelect">
+      <option value="ortho">Orthographic (Linear)</option>
+      <option value="stereo">Stereographic (Conformal)</option>
+      <option value="hyper" selected>Hyperbolic (Non-Euclidean)</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <label>Strand Count (<span id="strandCountVal">5000</span>)</label>
+    <input type="range" id="strandInput" min="500" max="25000" step="100" value="5000">
+
+    <label>Dust Particles (<span id="dustVal">15000</span>)</label>
+    <input type="range" id="dustInput" min="2000" max="40000" step="500" value="15000" style="accent-color:#ff8;">
+
+    <label>Rotation Speed (<span id="rotSpeedVal">1.0</span>)</label>
+    <input type="range" id="rotSpeedInput" min="0.1" max="4.0" step="0.1" value="1.0" style="accent-color:#f80;">
+
+    <label>Time Speed (<span id="speedVal">1.0</span>)</label>
+    <input type="range" id="speedInput" min="0.1" max="5.0" step="0.1" value="1.0">
+    
+    <label>Tension (<span id="tensionVal">1.0</span>)</label>
+    <input type="range" id="tensionInput" min="0.1" max="3.0" step="0.1" value="1.0">
+  </div>
+
+  <div class="section">
+    <h4>POST-PROCESSING</h4>
+    <label>Bloom (<span id="bloomVal">1.5</span>)</label>
+    <input type="range" id="bloomInput" min="0" max="3" step="0.1" value="1.5">
+    
+    <label>Chroma Aberration (<span id="chromaVal">0.003</span>)</label>
+    <input type="range" id="chromaInput" min="0" max="0.01" step="0.001" value="0.003">
+  </div>
+
+  <div class="section">
+    <h4>STRESS HARNESS</h4>
+    <label>Preset</label>
+    <select id="stressPreset">
+      <option value="low">Low (Mobile: 500-2500)</option>
+      <option value="medium" selected>Medium (Desktop: 2000-10000)</option>
+      <option value="high">High (High-end: 5000-25000)</option>
+    </select>
+    <button id="startStressBtn" style="margin-top:5px;">[[ START STRESS TEST ]]</button>
+    <button id="stopStressBtn" disabled>[[ STOP ]]</button>
+    <div id="stressStatus" style="margin-top:5px; font-size:10px; color:#888;">Status: Idle</div>
+  </div>
+  
+  <div class="section">
+    <h4>67-POINT GRID REF</h4>
+    <div id="gridDisplay" style="max-height:80px; overflow-y:auto; border:1px solid #003300; background:#000;">
+      <!-- Grid points injected via JS -->
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// --- MOCK RPG ENGINE / CONSOLE CORE ---
+
+// Mock DBM
+const dbm = {
+  log: (msg) => console.log(`[[DBM]] ${msg}`),
+  save: (data) => localStorage.simData = JSON.stringify(data),
+  load: () => JSON.parse(localStorage.simData || '{}')
+};
+
+// Mock ConsoleCore
+const ConsoleCore = {
+  state: { hp: 100, mp: 50, level: 1 },
+  init: (type) => {
+    consoleStatusEl.textContent = "RUNNING";
+    activeGameEl.textContent = type;
+    dbm.log(`Initialized ROM: ${type}`);
+  },
+  update: (key, activeGame) => {
+    if (key === 'A') ConsoleCore.state.mp--;
+  },
+  draw: (ctx, activeGame) => {
+    // CRT Scanline Effect
+    ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+    for(let i=0; i<450; i+=4) {
+      ctx.fillRect(0, i, 350, 1);
+    }
+    
+    // Simple HUD
+    ctx.fillStyle = "#0f0";
+    ctx.font = "12px 'Courier New'";
+    ctx.fillText(`SYS.STATUS: ONLINE`, 10, 30);
+    ctx.fillText(`MEM.INTEGRITY: 100%`, 10, 45);
+    
+    // Decorate based on active game
+    if (activeGame !== "NONE") {
+      ctx.strokeStyle = "rgba(0, 255, 0, 0.3)";
+      ctx.strokeRect(20, 60, 310, 370);
+      ctx.fillStyle = "rgba(0, 255, 0, 0.5)";
+      ctx.fillText("RENDERING 5D MANIFOLD...", 35, 80);
+    }
+  }
+};
+
+// --- GLOBAL STATE & INPUT ---
+let activeGame = "NONE";
+let isMenu = true;
+const ctx = document.getElementById('gameCanvas').getContext('2d');
+const gameCanvas = document.getElementById('gameCanvas');
+const consoleStatusEl = document.getElementById('consoleStatusEl');
+const activeGameEl = document.getElementById('activeGameEl');
+
+// Set internal resolution for the 2D canvas to match monitor (350x450)
+gameCanvas.width = 350;
+gameCanvas.height = 450;
+
+function handleInput(key) {
+  if (isMenu) return;
+  ConsoleCore.update(key, activeGame);
+}
+
+// --- THREE.JS & NANOPFILE NATION SIMULATION ---
+
+import * as THREE from "https://esm.sh/three@0.177.0";
+import { EffectComposer } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/ShaderPass.js";
+import { OutputPass } from "https://esm.sh/three@0.177.0/examples/jsm/postprocessing/OutputPass.js";
+import { createNoise3D } from "https://esm.sh/simplex-noise@4.0.3";
+
+// Constants
+const MONITOR_W = 350;
+const MONITOR_H = 450;
+const CONFIG = { 
+  segmentsPerStrand: 24, 
+  strandRadius: 50, 
+  stressPhases: 5,
+  phaseDuration: 2000
+};
+
+// State
+let state = {
+  strandCount: 5000,
+  dustCount: 15000,
+  speed: 1.0,
+  rotSpeed: 1.0,
+  noiseMag: 0.05,
+  tension: 1.0,
+  mode: 'hyper',
+  time: 0,
+  isStressTesting: false,
+  bloomStrength: 1.5,
+  chromaAmount: 0.003
+};
+
+// Reusable objects
+const tempVec = new THREE.Vector3();
+const tempQuat = new THREE.Quaternion();
+const tempQuat2 = new THREE.Quaternion();
+const tempColor = new THREE.Color();
+const noise3D = createNoise3D();
+
+// Three.js Init
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000022, 0.002);
+
+// Aspect ratio for portrait monitor
+const camera = new THREE.PerspectiveCamera(60, MONITOR_W / MONITOR_H, 0.1, 500);
+camera.position.set(0, 10, 90);
+
+const renderer = new THREE.WebGLRenderer({ 
+  canvas: document.getElementById('webglCanvas'), 
+  antialias: false // saving perf for high strand count
+});
+renderer.setSize(MONITOR_W, MONITOR_H);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+// Post-processing
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(MONITOR_W, MONITOR_H), 1.5, 0.4, 0.85);
+bloomPass.threshold = 0;
+bloomPass.strength = state.bloomStrength;
+bloomPass.radius = 0.5;
+composer.addPass(bloomPass);
+
+const chromaShader = {
+  uniforms: { "tDiffuse": { value: null }, "amount": { value: state.chromaAmount } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float amount;
+    varying vec2 vUv;
+    void main() {
+      vec2 offset = amount * vec2(1.0, 0.0);
+      vec4 cr = texture2D(tDiffuse, vUv + offset);
+      vec4 cga = texture2D(tDiffuse, vUv);
+      vec4 cb = texture2D(tDiffuse, vUv - offset);
+      gl_FragColor = vec4(cr.r, cga.g, cb.b, cga.a);
+    }
+  `
+};
+const chromaPass = new ShaderPass(chromaShader);
+composer.addPass(chromaPass);
+
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
+
+// Geometry Init
+let geometry = new THREE.BufferGeometry();
+let lines, dustSystem;
+const strandOrigins = [];
+
+function initStrands() {
+  strandOrigins.length = 0;
+  for (let i = 0; i < 25000; i++) { // Cap allocation
+    strandOrigins.push({
+      basePos: new THREE.Vector3(
+        (Math.random()-0.5)*CONFIG.strandRadius*2,
+        (Math.random()-0.5)*CONFIG.strandRadius*2,
+        (Math.random()-0.5)*CONFIG.strandRadius*2
+      ),
+      quat: new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize(),
+        Math.random() * Math.PI * 2
+      ),
+      phase: Math.random() * 200
+    });
+  }
+}
+
+function createGeometry() {
+  const segs = CONFIG.segmentsPerStrand;
+  // Pre-allocate for max possible to avoid reallocating during stress test
+  const maxCount = 25000; 
+  const count = maxCount * segs;
+  const positions = new Float32Array(count * 6); 
+  const colors = new Float32Array(count * 6);
+  
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setDrawRange(0, state.strandCount * segs * 2);
+  
+  if (lines) {
+    scene.remove(lines);
+    lines.geometry.dispose();
+  }
+  
+  const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    opacity: 0.6
+  });
+  
+  lines = new THREE.LineSegments(geometry, material);
+  scene.add(lines);
+}
+
+function createDust() {
+  if (dustSystem) {
+    scene.remove(dustSystem);
+    dustSystem.geometry.dispose();
+  }
+  
+  const dustGeom = new THREE.BufferGeometry();
+  const positions = new Float32Array(40000 * 3);
+  
+  for (let i = 0; i < 40000; i++) {
+    positions[i*3] = (Math.random()-0.5) * 200;
+    positions[i*3+1] = (Math.random()-0.5) * 200;
+    positions[i*3+2] = (Math.random()-0.5) * 200;
+  }
+  
+  dustGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  dustGeom.setDrawRange(0, state.dustCount);
+  
+  const dustMaterial = new THREE.PointsMaterial({
+    color: 0x88aaff,
+    size: 0.5,
+    transparent: true,
+    opacity: 0.4,
+    blending: THREE.AdditiveBlending
+  });
+  
+  dustSystem = new THREE.Points(dustGeom, dustMaterial);
+  scene.add(dustSystem);
+}
+
+function updateStrandCount(n) {
+  state.strandCount = n;
+  const segs = CONFIG.segmentsPerStrand;
+  // Update draw range to show only requested strands
+  geometry.setDrawRange(0, n * segs * 2);
+  strandCountVal.textContent = n;
+  strandInput.value = n;
+  objEl.textContent = n; // Update stats
+}
+
+// Sim Loop
+let lastFrameTime = performance.now();
+let stressStartTime = 0;
+let stressPhase = 0;
+let frameCount = 0;
+let lastFpsTime = 0;
+
+function animate(currentTime) {
+  requestAnimationFrame(animate);
+  
+  const dt = (currentTime - lastFrameTime) / 1000;
+  lastFrameTime = currentTime;
+  
+  // FPS Calculation
+  frameCount++;
+  if (currentTime - lastFpsTime >= 1000) {
+    fpsEl.textContent = frameCount;
+    if(performance.memory) {
+      memEl.textContent = Math.round(performance.memory.usedJSHeapSize / 1048576) + "MB";
+    }
+    frameCount = 0;
+    lastFpsTime = currentTime;
+  }
+  
+  state.time += dt * state.speed;
+
+  const posArray = geometry.attributes.position.array;
+  const colArray = geometry.attributes.color.array;
+  const segs = CONFIG.segmentsPerStrand;
+
+  for (let i = 0; i < state.strandCount; i++) {
+    const s = strandOrigins[i];
+    const base = s.basePos;
+
+    // Quaternion Evolution
+    tempQuat2.setFromAxisAngle(tempVec.set(0,1,0).normalize(), dt * state.rotSpeed * 0.8);
+    s.quat.multiplyQuaternions(s.quat, tempQuat2).normalize();
+
+    for (let j = 0; j < segs; j++) {
+      const t = j / segs;
+      const to = state.time + s.phase + t * 6;
+      const n = noise3D(base.x*0.04 + to*0.08, base.y*0.04 + to*0.08, base.z*0.04) * state.noiseMag * 15;
+
+      // 5D Calculation
+      tempVec.set(
+        base.x + Math.sin(to*0.6)*state.tension*4 + n,
+        base.y + Math.cos(to*0.35)*state.tension*4 + n,
+        base.z + Math.sin(to*0.75)*state.tension*2
+      );
+      tempVec.applyQuaternion(s.quat);
+
+      let x3 = tempVec.x, y3 = tempVec.y, z3 = tempVec.z;
+      
+      // Projection Modes
+      if (state.mode === 'hyper') {
+        const exp = Math.exp((s.quat.w + to*0.1) * 0.05 * state.tension);
+        x3 *= exp; y3 *= exp; z3 += to * 2;
+      } else if (state.mode === 'stereo') {
+        const w = s.quat.w;
+        const denom = 1 - w;
+        if (Math.abs(denom) > 0.01) {
+          const factor = 2 / denom;
+          x3 *= factor; y3 *= factor; z3 *= factor;
+        }
+      }
+
+      const idx = (i * segs + j) * 6;
+      posArray[idx] = x3; posArray[idx+1] = y3; posArray[idx+2] = z3;
+
+      // Next point for LineSegment
+      const tNext = (j+1)/segs;
+      const toNext = state.time + s.phase + tNext * 6;
+      const nNext = noise3D(base.x*0.04 + toNext*0.08, base.y*0.04 + toNext*0.08, base.z*0.04) * state.noiseMag * 15;
+      
+      tempVec.set(
+        base.x + Math.sin(toNext*0.6)*state.tension*4 + nNext,
+        base.y + Math.cos(toNext*0.35)*state.tension*4 + nNext,
+        base.z + Math.sin(toNext*0.75)*state.tension*2
+      );
+      tempVec.applyQuaternion(s.quat);
+      
+      let x3n = tempVec.x, y3n = tempVec.y, z3n = tempVec.z;
+      if (state.mode === 'hyper') {
+        const exp = Math.exp((s.quat.w + toNext*0.1) * 0.05 * state.tension);
+        x3n *= exp; y3n *= exp; z3n += toNext * 2;
+      } else if (state.mode === 'stereo') {
+        const w = s.quat.w;
+        const denom = 1 - w;
+        if (Math.abs(denom) > 0.01) {
+          const factor = 2 / denom;
+          x3n *= factor; y3n *= factor; z3n *= factor;
+        }
+      }
+      
+      posArray[idx+3] = x3n; posArray[idx+4] = y3n; posArray[idx+5] = z3n;
+
+      // Color
+      tempColor.setHSL((Math.sin(to) + 1)*0.5, 0.9, 0.6);
+      colArray[idx] = tempColor.r; colArray[idx+1] = tempColor.g; colArray[idx+2] = tempColor.b;
+      colArray[idx+3] = tempColor.r; colArray[idx+4] = tempColor.g; colArray[idx+5] = tempColor.b;
+    }
+  }
+
+  geometry.attributes.position.needsUpdate = true;
+  geometry.attributes.color.needsUpdate = true;
+
+  // Stress Test Logic
+  if (state.isStressTesting) {
+    if (currentTime - stressStartTime > CONFIG.phaseDuration * (stressPhase + 1)) {
+      stressPhase++;
+      if (stressPhase > 4) {
+        state.isStressTesting = false;
+        startStressBtn.disabled = false;
+        stopStressBtn.disabled = true;
+        stressStatus.textContent = "COMPLETE";
+        stressStatus.style.color = "#0f0";
+      } else {
+        // Ramp up logic
+        let base = 2000;
+        if(stressPreset.value === 'low') base = 500;
+        if(stressPreset.value === 'high') base = 5000;
+        
+        // Linear scaling for 5 phases
+        let target = base + (base * 4 * (stressPhase / 4)); 
+        updateStrandCount(Math.floor(target));
+        stressStatus.textContent = `Phase ${stressPhase+1}: ${state.strandCount} strands`;
+      }
+    }
+  }
+
+  // Camera Orbit
+  camera.position.x = Math.sin(currentTime * 0.0002) * 90;
+  camera.position.z = Math.cos(currentTime * 0.0002) * 90;
+  camera.lookAt(0, 0, 0);
+  
+  composer.render();
+}
+
+// --- 2D RENDER LOOP ---
+function render() {
+  ctx.clearRect(0, 0, MONITOR_W, MONITOR_H);
+  if (!isMenu && activeGame !== "NONE") {
+    ConsoleCore.draw(ctx, activeGame);
+  } else {
+    // Menu State
+    ctx.fillStyle = "#0f0";
+    ctx.font = "14px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.fillText("SYSTEM READY", MONITOR_W/2, 200);
+    ctx.font = "12px 'Courier New'";
+    ctx.fillText("LOAD SIM IN SETUP", MONITOR_W/2, 230);
+  }
+  requestAnimationFrame(render);
+}
+
+// --- 67-POINT GRID UI GENERATION ---
+const gridPoints = [
+  {id:0, weight:"2^0", role:"w-seed", sphere:"14:4 Base", trig:"μ[[0]] & 0xF ≡ 0x1"},
+  {id:1, weight:"2^1", role:"x-origin", sphere:"14:4 Base", trig:"Alignment < 0.07"},
+  {id:7, weight:"2^7", role:"y-accel", sphere:"28:8 Mid", trig:"Velocity ≡ s0o"},
+  {id:14, weight:"2^14", role:"Base-Gate", sphere:"14:4 Base", trig:"Interlock Check"},
+  {id:28, weight:"2^28", role:"Mid-Gate", sphere:"28:8 Mid", trig:"Alpha-Decay > 0.5"},
+  {id:33, weight:"2^33", role:"z-refract", sphere:"28:8 Mid", trig:"Blue Streak"},
+  {id:42, weight:"2^42", role:"w-rot", sphere:"56:16 Peak", trig:"μ[[1]] ≡ 0x42"},
+  {id:56, weight:"2^56", role:"Zenith", sphere:"56:16 Peak", trig:"μ[[56]] ≡ 0x5A"},
+  {id:60, weight:"2^60", role:"Hyper-static", sphere:"56:16 Peak", trig:"Pressure > 240"},
+  {id:66, weight:"2^66", role:"w-echo", sphere:"14:4 Base", trig:"Cycle ≡ 3 mod 4"}
+];
+
+function initGridUI() {
+  const container = document.getElementById('gridDisplay');
+  let html = '';
+  gridPoints.forEach(p => {
+    html += `<div class="grid-item" id="grid-${p.id}">
+      <span>${p.id} (${p.weight})</span>
+      <span style="color:#888">${p.role}</span>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+initGridUI();
+
+// --- EVENTS & UI WIRING ---
+
+// Setup Panel Toggle
+const panel = document.getElementById('setupPanel');
+const toggleBtn = document.getElementById('toggleSetupBtn');
+
+toggleBtn.onclick = () => {
+  panel.classList.toggle('collapsed');
+  // Change icon based on state
+  toggleBtn.textContent = panel.classList.contains('collapsed') ? '⚙️' : '✖';
+};
+
+// ROM Loader
+loadSimBtn.onclick = () => {
+  activeGame = "5D_HYPERSLICE";
+  isMenu = false;
+  ConsoleCore.init(activeGame);
+  // Collapse panel to show sim
+  panel.classList.add('collapsed');
+  toggleBtn.textContent = '⚙️';
+};
+
+// Inputs
+modeSelect.onchange = e => {
+  state.mode = e.target.value;
+  modeEl.textContent = e.target.value.toUpperCase();
+};
+
+strandInput.oninput = e => updateStrandCount(parseInt(e.target.value));
+dustInput.oninput = e => {
+  state.dustCount = parseInt(e.target.value);
+  dustVal.textContent = state.dustCount;
+  dustSystem.geometry.setDrawRange(0, state.dustCount);
+};
+speedInput.oninput = e => {
+  state.speed = parseFloat(e.target.value);
+  speedVal.textContent = state.speed.toFixed(1);
+};
+rotSpeedInput.oninput = e => {
+  state.rotSpeed = parseFloat(e.target.value);
+  rotSpeedVal.textContent = state.rotSpeed.toFixed(1);
+};
+tensionInput.oninput = e => {
+  state.tension = parseFloat(e.target.value);
+  tensionVal.textContent = state.tension.toFixed(1);
+};
+bloomInput.oninput = e => {
+  state.bloomStrength = parseFloat(e.target.value);
+  bloomPass.strength = state.bloomStrength;
+  bloomVal.textContent = state.bloomStrength.toFixed(1);
+};
+chromaInput.oninput = e => {
+  state.chromaAmount = parseFloat(e.target.value);
+  chromaPass.uniforms.amount.value = state.chromaAmount;
+  chromaVal.textContent = state.chromaAmount.toFixed(3);
+};
+
+stressPreset.onchange = () => { /* UI Update */ };
+
+startStressBtn.onclick = () => {
+  state.isStressTesting = true;
+  stressPhase = 0;
+  stressStartTime = performance.now();
+  
+  // Reset to base for preset
+  let base = 2000;
+  if(stressPreset.value === 'low') base = 500;
+  if(stressPreset.value === 'high') base = 5000;
+  updateStrandCount(base);
+  
+  startStressBtn.disabled = true;
+  stopStressBtn.disabled = false;
+  stressStatus.textContent = "Phase 1: Running";
+  stressStatus.style.color = "#ff0";
+};
+
+stopStressBtn.onclick = () => {
+  state.isStressTesting = false;
+  startStressBtn.disabled = false;
+  stopStressBtn.disabled = true;
+  stressStatus.textContent = "Stopped";
+  stressStatus.style.color = "#888";
+  updateStrandCount(2000); // Reset
+};
+
+// Monitor Interaction
+monitorContainer.addEventListener('mousedown', () => {
+  handleInput('A');
+});
+
+// Init
+initStrands();
+createGeometry();
+createDust();
+animate(performance.now());
+render();
+
+</script>
+</body>
+</html
