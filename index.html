@@ -735,6 +735,31 @@ createDust();
 animate(performance.now());
 render();
 
+// === ONE Service Worker Registration ===
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(registration => {
+        console.log('[[ONE]] Service Worker registered successfully');
+        
+        registration.onupdatefound = () => {
+          const installingWorker = registration.installing;
+          if (installingWorker) {
+            installingWorker.onstatechange = () => {
+              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.log('[[ONE]] New version available. Refresh to update.');
+              }
+            };
+          }
+        };
+      })
+      .catch(error => {
+        console.log('[[ONE]] Service Worker registration failed:', error);
+      });
+  });
+}
+
+  
 </script>
 </body>
 </html
