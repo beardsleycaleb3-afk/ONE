@@ -1,5 +1,5 @@
 // Cache glyph strands for offline
-const CACHE_NAME = 'sultan47-v1';
+const CACHE_NAME = 'ONE-v1';
 const STRANDS = [
     '00011000VAWqxb08',  // Kickoff
     '00110000MIXdxp10',  // Defense
