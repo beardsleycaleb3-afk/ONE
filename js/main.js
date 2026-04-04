@@ -1,5 +1,5 @@
-import { ECS } from './ecs.js';
-import { DBM } from './library.js';
+import { ECS } from '.js/ecs.js';
+import { DBM } from '.js/library.js';
 
 class Sultan47RPG {
     constructor() {
