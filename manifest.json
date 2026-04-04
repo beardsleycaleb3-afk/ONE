@@ -1,27 +1,9 @@
 {
-  "name": "ONE",
-  "short_name": "ONE",
-  "description": "5D Hyperslice + Console Core • Negentropy Simulation Engine",
-  "start_url": "/index.html",
-  "display": "standalone",
-  "background_color": "#080808",
-  "theme_color": "#00ff00",
-  "orientation": "portrait-primary",
-  "icons": [
-    {
-      "src": "icon.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "icon.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ],
-  "categories": ["entertainment", "simulation", "art"],
-  "lang": "en",
-  "dir": "ltr"
+    "name": "ONE",
+    "short_name": "ONE",
+    "start_url": "/",
+    "display": "standalone, fullscreen",
+    "background_color": "#0a0a15",
+    "theme_color": "#0f0",
+    "icons": [{"src": "icon.png", "sizes": "192x192", "type": "image/png"}]
 }
